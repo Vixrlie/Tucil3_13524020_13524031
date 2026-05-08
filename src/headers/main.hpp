@@ -6,3 +6,4 @@
 #include "state.hpp"
 #include "ucs.hpp"
 #include "output.hpp"
+#include "gui.hpp"
