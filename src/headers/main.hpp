@@ -4,5 +4,6 @@
 #include "format.hpp"
 #include "board.hpp"
 #include "state.hpp"
-#include "ucs.hpp"
+#include "gbfs.hpp"
 #include "output.hpp"
+#include "ucs.hpp"
