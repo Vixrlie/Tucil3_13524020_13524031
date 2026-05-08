@@ -42,7 +42,15 @@ int main() {
             cout << "Iterations: " << sol.iterations << endl;
             cout << "Execution time: " << sol.execMs << " ms" << endl;
         } else if (alg == "ucs") {
-            // isi ucs
+            Solution sol = SolveUCS(b);
+            if (!sol.found) {
+                cout << "Solution not found" << endl;
+            } else {
+                cout << "Solution moves: " << sol.moves << endl;
+                cout << "Solution cost: " << sol.cost << endl;
+            }
+            cout << "Iterations: " << sol.iterations << endl;
+            cout << "Execution time: " << sol.execMs << " ms" << endl;
         } else {
             cout << "Algorithm not supported by this runner." << endl;
         }
