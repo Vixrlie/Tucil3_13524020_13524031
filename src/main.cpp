@@ -1,14 +1,19 @@
 #include "headers/main.hpp"
 
+static string Trim(const string& s) {
+    size_t a = s.find_first_not_of(" \t");
+    size_t b = s.find_last_not_of(" \t\r\n");
+    if (a == string::npos) return "";
+    return s.substr(a, b - a + 1);
+}
+
 int main() {
     cout << ">> Input file name : " << endl;
     cout << "   ";
     string name;
     if (!getline(cin, name)) return 1;
-    size_t s = name.find_first_not_of(" \t");
-    size_t e = name.find_last_not_of(" \t\r\n");
-    if (s == string::npos) { cerr << "[ERROR] Empty file name !" << endl; return 1; }
-    name = name.substr(s, e - s + 1);
+    name = Trim(name);
+    if (name.empty()) { cerr << "[ERROR] Empty file name !" << endl; return 1; }
 
     string path = "test/" + name;
 
