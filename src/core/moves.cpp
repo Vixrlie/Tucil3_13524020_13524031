@@ -1,4 +1,4 @@
-#include "../headers/main.hpp"
+#include "headers/main.hpp"
 
 State InitialState(const Board& b) {
     State s;
