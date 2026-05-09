@@ -33,7 +33,7 @@ struct Solution {
     int cost;
     vector<State> trace; //state setelah tiap move, trace[0] = state awal
     int iterations; //jumlah node yang di-pop dari frontier
-    long long execMs; //waktu eksekusi solver, exclude I/O
+    long long execUs; //waktu eksekusi solver dalam microseconds, exclude I/O
 };
 
 State InitialState(const Board& b);

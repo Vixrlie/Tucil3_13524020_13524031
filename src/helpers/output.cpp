@@ -23,14 +23,14 @@ void PrintSolution(const Board& b, const Solution& sol, ostream& out) {
     if (!sol.found) {
         out << "No solution found." << "\n";
         out << "Iterations : " << sol.iterations << "\n";
-        out << "Exec time  : " << sol.execMs << " ms" << "\n";
+        out << "Exec time  : " << FormatExecTime(sol.execUs) << "\n";
         return;
     }
 
     out << "Solution   : " << sol.moves << "\n";
     out << "Total cost : " << sol.cost << "\n";
     out << "Iterations : " << sol.iterations << "\n";
-    out << "Exec time  : " << sol.execMs << " ms" << "\n";
+    out << "Exec time  : " << FormatExecTime(sol.execUs) << "\n";
     out << "\n";
 
     out << "Initial" << "\n";

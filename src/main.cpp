@@ -7,7 +7,7 @@ static string Trim(const string& s) {
     return s.substr(a, b - a + 1);
 }
 
-int main() {
+static int RunCli() {
     cout << ">> Input file name : " << endl;
     cout << "   ";
     string name;
@@ -60,4 +60,13 @@ int main() {
         return 1;
     }
     return 0;
+}
+
+int main(int argc, char** argv) {
+    //default: GUI. Pakai --cli untuk mode terminal.
+    for (int i = 1; i < argc; i++) {
+        string a = argv[i];
+        if (a == "--cli" || a == "-c") return RunCli();
+    }
+    return RunGui();
 }
