@@ -32,7 +32,17 @@ static int RunCli() {
         alg = alg.substr(sa, ea - sa + 1);
 
         if (alg == "gbfs") {
-            Solution sol = SolveGBFS(b);
+            cout << ">> Heuristic (h1/h2/h3): " << endl;
+            cout << "   ";
+            string heur;
+            if (!getline(cin, heur)) return 0;
+            size_t sh = heur.find_first_not_of(" \t");
+            size_t eh = heur.find_last_not_of(" \t\r\n");
+            if (sh != string::npos) heur = heur.substr(sh, eh - sh + 1);
+            int hid = 2;
+            if (heur == "h1") hid = 1;
+            else if (heur == "h3") hid = 3;
+            Solution sol = SolveGBFS(b, hid);
             if (!sol.found) {
                 cout << "Solution not found" << endl;
             } else {
@@ -59,7 +69,10 @@ static int RunCli() {
             size_t sh = heur.find_first_not_of(" \t");
             size_t eh = heur.find_last_not_of(" \t\r\n");
             if (sh != string::npos) heur = heur.substr(sh, eh - sh + 1);
-            Solution sol = SolveAStar(b);
+            int hid = 1;
+            if (heur == "h2") hid = 2;
+            else if (heur == "h3") hid = 3;
+            Solution sol = SolveAStar(b, hid);
             if (!sol.found) {
                 cout << "Solution not found" << endl;
             } else {

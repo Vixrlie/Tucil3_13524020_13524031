@@ -390,7 +390,7 @@ int RunGui() {
             };
             consumeIfPopup(prFile, ddFile, files);
             consumeIfPopup(prAlgo, ddAlgo, algos);
-            bool heurEnabledPre = (ddAlgo.idx != 0);
+            bool heurEnabledPre = (ddAlgo.idx != 0); //GBFS dan A* butuh pilih heuristik, UCS tidak
             if (heurEnabledPre) consumeIfPopup(prHeur, ddHeur, heurs);
             //kalau modal save terbuka, klik DI LUAR area modal dianggap dikonsumsi.
             //klik di dalam modal area dilepas supaya tombol Cancel/Save bisa kebaca.
@@ -437,16 +437,16 @@ int RunGui() {
         y += 60;
 
         Rectangle rHeur = { 20, (float)y, SIDE_W - 40, 32 };
-        bool heurEnabled = (ddAlgo.idx != 0); //UCS ga butuh heuristik
+        bool heurEnabled = (ddAlgo.idx != 0); //GBFS dan A* butuh pilih heuristik
         if (heurEnabled) {
             DrawDropdown(rHeur, ddHeur, heurs, "Heuristic");
         } else {
-            //placeholder disabled, hanya satu label, tanpa pemanggilan DrawDropdown supaya gak dobel
+            //UCS ga butuh heuristik
             DrawText("Heuristic", (int)rHeur.x, (int)rHeur.y - 18, 14, TEXT_DIM);
             DrawRectangleRec(rHeur, PANEL);
             DrawRectangleLinesEx(rHeur, 1, BORDER);
             DrawText("(unused for UCS)", (int)rHeur.x + 10, (int)rHeur.y + 8, 16, TEXT_DIM);
-            ddHeur.open = false; //pastikan popup nutup kalau user pindah ke UCS saat dropdown terbuka
+            ddHeur.open = false;
         }
         y += 60;
 
@@ -463,10 +463,10 @@ int RunGui() {
                 boardLoaded = false;
             }
             if (boardLoaded) {
-                //semua algo sementara fallback ke UCS (stub)
+                //dispatch ke solver sesuai algoritma terpilih
                 if (ddAlgo.idx == 0) sol = SolveUCS(board);
-                else if (ddAlgo.idx == 1) sol = SolveGBFS(board);
-                else if (ddAlgo.idx == 2) sol = SolveAStar(board);
+                else if (ddAlgo.idx == 1) sol = SolveGBFS(board, ddHeur.idx + 1);
+                else if (ddAlgo.idx == 2) sol = SolveAStar(board, ddHeur.idx + 1);
                 solved = true;
                 curStep = 0;
                 playing = false;

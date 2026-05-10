@@ -22,11 +22,9 @@ struct PQComp {
     }
 };
 
-static int Heuristic(const Board& b, const State& s) {
-    return abs(s.player.r - b.goal.r) + abs(s.player.c - b.goal.c);
-}
+//heuristik (H1/H2/H3) didefinisikan di helpers/heuristic.cpp, dipakai bersama dgn GBFS
 
-Solution SolveAStar(const Board& b) {
+Solution SolveAStar(const Board& b, int heur) {
     auto t0 = chrono::steady_clock::now();
 
     Solution sol;
@@ -40,7 +38,7 @@ Solution SolveAStar(const Board& b) {
     pool.push_back({init, 0, -1, '\0'});
 
     priority_queue<PQItem, vector<PQItem>, PQComp> pq;
-    int h0 = Heuristic(b, init);
+    int h0 = Heuristic(b, init, heur);
     pq.push({h0, 0, 0, 0});
 
     unordered_map<State, int, StateHash> bestG; //best g per state
@@ -69,7 +67,7 @@ Solution SolveAStar(const Board& b) {
             if (it2 != bestG.end() && ng >= it2->second) continue;
             bestG[mv.next] = ng;
             pool.push_back({mv.next, ng, it.idx, mv.dir});
-            int nh = Heuristic(b, mv.next);
+            int nh = Heuristic(b, mv.next, heur);
             int nf = ng + nh;
             pq.push({nf, -ng, pushId, (int)pool.size() - 1});
             pushId++;
@@ -77,7 +75,7 @@ Solution SolveAStar(const Board& b) {
     }
 
     auto t1 = chrono::steady_clock::now();
-    sol.execUs = chrono::duration_cast<chrono::milliseconds>(t1 - t0).count();
+    sol.execUs = chrono::duration_cast<chrono::microseconds>(t1 - t0).count();
 
     if (goalIdx < 0) return sol;
 

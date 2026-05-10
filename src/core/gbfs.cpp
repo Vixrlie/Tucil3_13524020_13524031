@@ -8,14 +8,7 @@ struct Node {
 	char dir; // '\0' kalau root
 };
 
-static int Heuristic(const Board& b, const State& s) {
-	Pos target;
-	if (s.nextDigit <= b.maxDigit) target = b.digits[s.nextDigit];
-	else target = b.goal;
-	return abs(s.player.r - target.r) + abs(s.player.c - target.c);
-}
-
-Solution SolveGBFS(const Board& b) {
+Solution SolveGBFS(const Board& b, int heur) {
 	auto t0 = chrono::steady_clock::now();
 
 	Solution sol;
@@ -30,7 +23,7 @@ Solution SolveGBFS(const Board& b) {
 
 	// pq: (h, nodeIdx) min-heap
 	priority_queue<pair<int,int>, vector<pair<int,int>>, greater<pair<int,int>>> pq;
-	pq.push({Heuristic(b, init), 0});
+	pq.push({Heuristic(b, init, heur), 0});
 
 	unordered_set<State, StateHash> closed; // visited set
 
@@ -56,13 +49,13 @@ Solution SolveGBFS(const Board& b) {
 			int ng = pool[idx].g + mv.cost;
 			pool.push_back({nxt, ng, idx, mv.dir});
 			int newIdx = (int)pool.size() - 1;
-			int nh = Heuristic(b, nxt);
+			int nh = Heuristic(b, nxt, heur);
 			pq.push({nh, newIdx});
 		}
 	}
 
 	auto t1 = chrono::steady_clock::now();
-	sol.execUs = chrono::duration_cast<chrono::milliseconds>(t1 - t0).count();
+	sol.execUs = chrono::duration_cast<chrono::microseconds>(t1 - t0).count();
 
 	if (goalIdx < 0) return sol;
 
