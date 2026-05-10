@@ -13,7 +13,6 @@ static const Color TEXT_DIM    = { 150, 158, 178, 255 };
 static const Color ACCENT      = {  90, 160, 255, 255 };
 static const Color ACCENT_HOT  = { 120, 180, 255, 255 };
 static const Color OK          = {  90, 200, 130, 255 };
-static const Color WARN        = { 240, 180,  80, 255 };
 static const Color BAD         = { 230,  90,  90, 255 };
 
 //warna tile
@@ -27,51 +26,84 @@ static const Color PLAYER      = {  80, 150, 240, 255 };
 static int gW = 1100;
 static int gH = 700;
 
-//pecah teks jadi baris2 yg muat di width pixel tertentu (word-wrap, fallback char-wrap)
+//flag konsumsi klik per-frame, dipakai supaya popup dropdown / modal nutup widget di belakangnya
+static bool gClickConsumed = false;
+static bool ClickPressed() { return !gClickConsumed && IsMouseButtonPressed(MOUSE_LEFT_BUTTON); }
+
+//pecah teks jadi baris2 yg muat di width pixel tertentu (word-wrap, fallback char-wrap).
+//pakai measure incremental supaya O(n) dlm jumlah karakter, bukan O(n^2).
 static vector<string> WrapText(const string& text, int fontSize, int maxWidth) {
     vector<string> lines;
     string line;
+    int lineW = 0;
     string word;
-    auto flushWord = [&](bool addSpace) {
+    int wordW = 0;
+    int spaceW = MeasureText(" ", fontSize);
+
+    auto charW = [&](char c) {
+        char s[2] = { c, 0 };
+        return MeasureText(s, fontSize);
+    };
+
+    auto pushWord = [&]() {
         if (word.empty()) return;
-        string cand = line.empty() ? word : line + " " + word;
-        if (MeasureText(cand.c_str(), fontSize) <= maxWidth) {
-            line = cand;
+        int candW = line.empty() ? wordW : lineW + spaceW + wordW;
+        if (candW <= maxWidth) {
+            if (line.empty()) { line = word; lineW = wordW; }
+            else { line += ' '; line += word; lineW += spaceW + wordW; }
         } else {
-            if (!line.empty()) { lines.push_back(line); line.clear(); }
-            //word sendiri mungkin lebih lebar dari maxWidth, hard-wrap per char
-            if (MeasureText(word.c_str(), fontSize) > maxWidth) {
+            if (!line.empty()) { lines.push_back(line); line.clear(); lineW = 0; }
+            if (wordW > maxWidth) {
+                //hard-wrap per char incremental
                 string chunk;
+                int chunkW = 0;
                 for (char ch : word) {
-                    string trial = chunk + ch;
-                    if (MeasureText(trial.c_str(), fontSize) > maxWidth && !chunk.empty()) {
+                    int cw = charW(ch);
+                    if (chunkW + cw > maxWidth && !chunk.empty()) {
                         lines.push_back(chunk);
                         chunk.clear();
+                        chunkW = 0;
                     }
                     chunk += ch;
+                    chunkW += cw;
                 }
                 line = chunk;
+                lineW = chunkW;
             } else {
                 line = word;
+                lineW = wordW;
             }
         }
         word.clear();
-        (void)addSpace;
+        wordW = 0;
     };
+
     for (char ch : text) {
         if (ch == '\n') {
-            flushWord(false);
+            pushWord();
             lines.push_back(line);
-            line.clear();
+            line.clear(); lineW = 0;
         } else if (ch == ' ' || ch == '\t') {
-            flushWord(true);
+            pushWord();
         } else {
             word += ch;
+            wordW += charW(ch);
         }
     }
-    flushWord(false);
+    pushWord();
     if (!line.empty()) lines.push_back(line);
     return lines;
+}
+
+//gambar teks ber-wrap di lebar tertentu, return tinggi yg digunakan
+static int DrawWrappedText(const string& text, int x, int y, int maxWidth, int fontSize, int lineH, Color c) {
+    vector<string> lines = WrapText(text, fontSize, maxWidth);
+    int yy = y;
+    for (const string& ln : lines) {
+        DrawText(ln.c_str(), x, yy, fontSize, c);
+        yy += lineH;
+    }
+    return yy - y;
 }
 
 //list file di folder test/
@@ -126,7 +158,8 @@ static void DrawPlayer(int gridX, int gridY, int sz, int r, int c) {
 static bool Button(Rectangle r, const char* label, bool enabled = true) {
     Vector2 mp = GetMousePosition();
     bool hover = enabled && CheckCollisionPointRec(mp, r);
-    bool clicked = hover && IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
+    bool clicked = hover && ClickPressed();
+    if (clicked) gClickConsumed = true;
     Color bg = enabled ? (hover ? PANEL_HI : PANEL) : PANEL;
     Color border = enabled ? (hover ? ACCENT : BORDER) : BORDER;
     Color tc = enabled ? TEXT : TEXT_DIM;
@@ -152,27 +185,68 @@ static int DrawDropdown(Rectangle r, Dropdown& dd, const vector<string>& items, 
     string cur = items.empty() ? string("-") : items[dd.idx];
     DrawText(cur.c_str(), (int)r.x + 10, (int)r.y + 8, 16, TEXT);
     DrawText("v", (int)(r.x + r.width - 18), (int)r.y + 8, 16, TEXT_DIM);
-    if (hover && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) dd.open = !dd.open;
+    if (hover && ClickPressed()) {
+        dd.open = !dd.open;
+        gClickConsumed = true;
+    }
     return dd.idx;
 }
 //panel popup dropdown digambar belakangan supaya nutupin elemen lain
 static void DrawDropdownPopup(Rectangle r, Dropdown& dd, const vector<string>& items) {
     if (!dd.open) return;
     Vector2 mp = GetMousePosition();
-    Rectangle pop = { r.x, r.y + r.height, r.width, (float)(items.size() * 30) };
+    const int rowH = 30;
+    int contentH = (int)items.size() * rowH;
+    //batasi tinggi popup ke ruang sisa di bawah dropdown supaya tidak overflow window
+    int avail = max(60, gH - (int)(r.y + r.height) - 8);
+    int popH = min(contentH, avail);
+    Rectangle pop = { r.x, r.y + r.height, r.width, (float)popH };
+
+    //scroll state per-dropdown (pakai map static keyed pointer)
+    static map<Dropdown*, float> scrollMap;
+    float& scroll = scrollMap[&dd];
+    int maxScroll = max(0, contentH - popH);
+    if (CheckCollisionPointRec(mp, pop)) {
+        scroll -= GetMouseWheelMove() * 30.0f;
+    }
+    if (scroll < 0) scroll = 0;
+    if (scroll > maxScroll) scroll = (float)maxScroll;
+
     DrawRectangleRec(pop, PANEL);
     DrawRectangleLinesEx(pop, 1, BORDER);
+
+    BeginScissorMode((int)pop.x, (int)pop.y, (int)pop.width, (int)pop.height);
     for (size_t i = 0; i < items.size(); i++) {
-        Rectangle row = { pop.x, pop.y + i * 30, pop.width, 30 };
-        bool h = CheckCollisionPointRec(mp, row);
+        Rectangle row = { pop.x, pop.y + (float)((int)i * rowH) - scroll, pop.width, (float)rowH };
+        bool insideBox = row.y + row.height > pop.y && row.y < pop.y + pop.height;
+        if (!insideBox) continue;
+        bool h = CheckCollisionPointRec(mp, row) && CheckCollisionPointRec(mp, pop);
         if (h) DrawRectangleRec(row, PANEL_HI);
         DrawText(items[i].c_str(), (int)row.x + 10, (int)row.y + 7, 16, TEXT);
         if (h && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
             dd.idx = (int)i;
             dd.open = false;
+            gClickConsumed = true;
         }
     }
-    //klik di luar popup tutup dropdown
+    EndScissorMode();
+
+    //scrollbar tipis kalau overflow
+    if (maxScroll > 0) {
+        const int sbW = 4;
+        float trackH = pop.height - 4;
+        float thumbH = trackH * (float)popH / (float)contentH;
+        if (thumbH < 16) thumbH = 16;
+        float thumbY = pop.y + 2 + (trackH - thumbH) * (scroll / (float)maxScroll);
+        DrawRectangle((int)(pop.x + pop.width - sbW - 2), (int)pop.y + 2, sbW, (int)trackH, BORDER);
+        DrawRectangle((int)(pop.x + pop.width - sbW - 2), (int)thumbY, sbW, (int)thumbH, ACCENT);
+    }
+
+    //klik di area popup tapi bukan item (mis. di scrollbar) tetap dikonsumsi
+    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mp, pop)) {
+        gClickConsumed = true;
+    }
+    //klik di luar popup & box dropdown tutup popup
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !CheckCollisionPointRec(mp, pop) && !CheckCollisionPointRec(mp, r)) {
         dd.open = false;
     }
@@ -182,7 +256,7 @@ static void DrawDropdownPopup(Rectangle r, Dropdown& dd, const vector<string>& i
 static float Slider(Rectangle r, float v, bool& dragging) {
     Vector2 mp = GetMousePosition();
     bool hover = CheckCollisionPointRec(mp, r);
-    if (hover && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) dragging = true;
+    if (hover && ClickPressed()) { dragging = true; gClickConsumed = true; }
     if (!IsMouseButtonDown(MOUSE_LEFT_BUTTON)) dragging = false;
     if (dragging) {
         v = (mp.x - r.x) / r.width;
@@ -199,6 +273,12 @@ static float Slider(Rectangle r, float v, bool& dragging) {
 //tulis solusi ke file txt. Return true kalau sukses.
 static bool SaveSolutionTxt(const string& path, const Board& b, const Solution& sol,
                             const string& algo, const string& heur) {
+    //bikin folder kalau belum ada (parent dari path)
+    size_t slash = path.find_last_of('/');
+    if (slash != string::npos) {
+        string dir = path.substr(0, slash);
+        if (!dir.empty()) mkdir(dir.c_str(), 0755); //ignore error kalau sudah ada
+    }
     ofstream of(path);
     if (!of) return false;
     of << "Algorithm   : " << algo << "\n";
@@ -215,6 +295,7 @@ int RunGui() {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
     InitWindow(gW, gH, "Ice Sliding Puzzle Solver");
     SetTargetFPS(60);
+    SetExitKey(KEY_NULL); //jangan close window pas user tekan ESC (dipakai untuk cancel modal)
 
     vector<string> files = ListTestFiles();
     Dropdown ddFile, ddAlgo, ddHeur;
@@ -227,7 +308,6 @@ int RunGui() {
 
     bool solved = false;
     Solution sol;
-    string solveNotice; //pesan kalau pakai stub
 
     int curStep = 0;
     bool playing = false;
@@ -237,12 +317,27 @@ int RunGui() {
     bool sliderDrag = false;
     string saveStatus;
 
+    //save modal state
+    bool saveModalOpen = false;
+    string savePathBuf; //isi text input
+    int saveCaret = 0;  //posisi caret (index char di buffer)
+    bool savePathError = false; //tampil error inline kalau klik Save dgn path kosong
+
+    //scroll vertikal sidebar kalau konten melewati window height
+    float sidebarScroll = 0.0f;
+    int lastSidebarContentH = 0;
+
     while (!WindowShouldClose()) {
         gW = GetScreenWidth();
         gH = GetScreenHeight();
 
-        //input keyboard playback
-        if (solved) {
+        //clamp dropdown idx supaya gak OOB kalau jumlah items berubah
+        if (ddFile.idx >= (int)files.size()) ddFile.idx = max(0, (int)files.size() - 1);
+        if (ddAlgo.idx >= (int)algos.size()) ddAlgo.idx = 0;
+        if (ddHeur.idx >= (int)heurs.size()) ddHeur.idx = 0;
+
+        //input keyboard playback (skip kalau modal terbuka supaya gak mengganggu typing)
+        if (solved && !saveModalOpen) {
             if (IsKeyPressed(KEY_RIGHT)) {
                 if (curStep < (int)sol.trace.size() - 1) curStep++;
                 playing = false;
@@ -268,6 +363,46 @@ int RunGui() {
             }
         }
 
+        //reset flag konsumsi klik tiap frame
+        gClickConsumed = false;
+
+        //pre-pass: kalau ada popup dropdown / modal yg terbuka, dia berhak menyerap klik
+        //sebelum widget biasa di-process. Logikanya cuma deteksi area; render tetap di akhir.
+        {
+            const int SIDE_W_PRE = 290;
+            //rect dropdown harus match dgn yg dipakai render. Apply sidebar scroll juga.
+            int yPre = 90 - (int)sidebarScroll;
+            Rectangle prFile = { 20, (float)yPre, SIDE_W_PRE - 40, 32 };
+            int yAlgo = yPre + 60;
+            Rectangle prAlgo = { 20, (float)yAlgo, SIDE_W_PRE - 40, 32 };
+            int yHeur = yAlgo + 60;
+            Rectangle prHeur = { 20, (float)yHeur, SIDE_W_PRE - 40, 32 };
+            Vector2 mp = GetMousePosition();
+            auto consumeIfPopup = [&](Rectangle r, Dropdown& dd, const vector<string>& items) {
+                if (!dd.open) return;
+                int contentH = (int)items.size() * 30;
+                int avail = max(60, gH - (int)(r.y + r.height) - 8);
+                int popH = min(contentH, avail);
+                Rectangle pop = { r.x, r.y + r.height, r.width, (float)popH };
+                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mp, pop)) {
+                    gClickConsumed = true;
+                }
+            };
+            consumeIfPopup(prFile, ddFile, files);
+            consumeIfPopup(prAlgo, ddAlgo, algos);
+            bool heurEnabledPre = (ddAlgo.idx != 0);
+            if (heurEnabledPre) consumeIfPopup(prHeur, ddHeur, heurs);
+            //kalau modal save terbuka, klik DI LUAR area modal dianggap dikonsumsi.
+            //klik di dalam modal area dilepas supaya tombol Cancel/Save bisa kebaca.
+            if (saveModalOpen && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+                const int modalW = 520, modalH = 180;
+                int mx2 = (gW - modalW) / 2;
+                int my2 = (gH - modalH) / 2;
+                Rectangle modalRect = { (float)mx2, (float)my2, (float)modalW, (float)modalH };
+                if (!CheckCollisionPointRec(mp, modalRect)) gClickConsumed = true;
+            }
+        }
+
         BeginDrawing();
         ClearBackground(BG);
 
@@ -276,10 +411,23 @@ int RunGui() {
         DrawRectangle(0, 0, SIDE_W, gH, PANEL);
         DrawLine(SIDE_W, 0, SIDE_W, gH, BORDER);
 
+        //judul tetap fixed di atas, tidak ikut scroll
         DrawText("Ice Sliding Puzzle", 20, 18, 20, TEXT);
         DrawText("Solver", 20, 42, 14, TEXT_DIM);
 
-        int y = 90;
+        //wheel scroll sidebar (kalau mouse di sidebar dan tidak overlap dgn area scrollable lain)
+        Vector2 mpSb = GetMousePosition();
+        bool mouseInSidebar = mpSb.x < SIDE_W && mpSb.y > 70;
+        if (mouseInSidebar) {
+            int maxScrollSb = max(0, lastSidebarContentH - (gH - 70));
+            sidebarScroll -= GetMouseWheelMove() * 30.0f;
+            if (sidebarScroll < 0) sidebarScroll = 0;
+            if (sidebarScroll > maxScrollSb) sidebarScroll = (float)maxScrollSb;
+        }
+
+        //scissor untuk konten scrollable sidebar (di bawah judul)
+        BeginScissorMode(0, 70, SIDE_W, gH - 70);
+        int y = 90 - (int)sidebarScroll;
         Rectangle rFile = { 20, (float)y, SIDE_W - 40, 32 };
         DrawDropdown(rFile, ddFile, files, "Input file");
         y += 60;
@@ -384,10 +532,10 @@ int RunGui() {
             DrawText("Result", 20, y, 14, TEXT_DIM); y += 20;
             char buf[256];
             if (sol.found) {
-                snprintf(buf, sizeof(buf), "Status     : FOUND");
-                DrawText(buf, 20, y, 14, OK); y += 20;
-                snprintf(buf, sizeof(buf), "Moves      : %s", sol.moves.c_str());
-                DrawText(buf, 20, y, 14, TEXT); y += 20;
+                DrawText("Status     : FOUND", 20, y, 14, OK); y += 20;
+                //moves bisa panjang, wrap
+                DrawText("Moves :", 20, y, 14, TEXT); y += 18;
+                y += DrawWrappedText(sol.moves, 20, y, SIDE_W - 40, 14, 16, TEXT) + 4;
                 snprintf(buf, sizeof(buf), "Total cost : %d", sol.cost);
                 DrawText(buf, 20, y, 14, TEXT); y += 20;
             } else {
@@ -398,22 +546,8 @@ int RunGui() {
             snprintf(buf, sizeof(buf), "Exec time  : %s", FormatExecTime(sol.execUs).c_str());
             DrawText(buf, 20, y, 14, TEXT); y += 28;
 
-            if (!solveNotice.empty()) {
-                DrawText("Note:", 20, y, 12, WARN); y += 16;
-                //wrap manual sederhana
-                string s = solveNotice;
-                size_t pos = 0;
-                while (pos < s.size()) {
-                    size_t take = min((size_t)34, s.size() - pos);
-                    DrawText(s.substr(pos, take).c_str(), 20, y, 12, TEXT_DIM);
-                    pos += take;
-                    y += 14;
-                }
-                y += 8;
-            }
-
+            //playback controls hanya kalau ada solusi
             if (sol.found) {
-                //playback controls
                 DrawText("Playback", 20, y, 14, TEXT_DIM); y += 22;
                 snprintf(buf, sizeof(buf), "Step %d / %zu", curStep, sol.trace.size() - 1);
                 DrawText(buf, 20, y, 14, TEXT); y += 22;
@@ -443,45 +577,58 @@ int RunGui() {
                 playSpeed = Slider(rSpd, playSpeed, spdDrag);
                 y += 28;
 
-                //save
-                Rectangle rSave = { 20, (float)y, SIDE_W - 40, 32 };
-                if (Button(rSave, "Save solution to .txt")) {
-                    string outPath = "test/solution_" + files[ddFile.idx];
-                    bool ok = SaveSolutionTxt(outPath, board, sol,
-                                              algos[ddAlgo.idx],
-                                              heurEnabled ? heurs[ddHeur.idx] : string("-"));
-                    saveStatus = ok ? ("Saved to " + outPath) : ("[ERROR] Failed to save !");
-                }
-                y += 36;
-                if (!saveStatus.empty()) {
-                    Color sc = saveStatus.rfind("[ERROR]", 0) == 0 ? BAD : OK;
-                    //wrap path kalau panjang
-                    string s = saveStatus;
-                    size_t pos = 0;
-                    while (pos < s.size()) {
-                        size_t take = min((size_t)34, s.size() - pos);
-                        DrawText(s.substr(pos, take).c_str(), 20, y, 12, sc);
-                        pos += take;
-                        y += 14;
-                    }
-                }
+            }
+
+            //save tetap ditampilkan walau no-solution (user mungkin mau simpan info)
+            Rectangle rSave = { 20, (float)y, SIDE_W - 40, 32 };
+            if (Button(rSave, "Save solution to .txt") && !files.empty()) {
+                savePathBuf = "test/solution/" + files[ddFile.idx];
+                saveCaret = (int)savePathBuf.size();
+                savePathError = false;
+                saveModalOpen = true;
+                saveStatus.clear();
+            }
+            y += 36;
+            if (!saveStatus.empty()) {
+                Color sc = saveStatus.rfind("[ERROR]", 0) == 0 ? BAD : OK;
+                y += DrawWrappedText(saveStatus, 20, y, SIDE_W - 40, 12, 14, sc);
             }
         } else {
             DrawText("Pick a file and click Solve.", 20, y, 14, TEXT_DIM);
             y += 24;
             DrawText("Keys: <- -> step, Space play,", 20, y, 12, TEXT_DIM); y += 16;
             DrawText("Home/End jump first/last.", 20, y, 12, TEXT_DIM);
+            y += 16;
+        }
+
+        //hitung total tinggi konten sidebar untuk scroll calc next frame
+        lastSidebarContentH = (y + (int)sidebarScroll) - 90 + 40; //margin bawah 40
+        EndScissorMode();
+
+        //scrollbar sidebar tipis di tepi
+        {
+            int maxScrollSb = max(0, lastSidebarContentH - (gH - 70));
+            if (maxScrollSb > 0) {
+                int sbW = 4;
+                float trackY = 72;
+                float trackH = (float)(gH - 80);
+                float thumbH = trackH * (float)(gH - 70) / (float)lastSidebarContentH;
+                if (thumbH < 20) thumbH = 20;
+                float thumbY = trackY + (trackH - thumbH) * (sidebarScroll / (float)maxScrollSb);
+                DrawRectangle(SIDE_W - sbW - 3, (int)trackY, sbW, (int)trackH, BORDER);
+                DrawRectangle(SIDE_W - sbW - 3, (int)thumbY, sbW, (int)thumbH, ACCENT);
+            }
         }
 
         //grid area
         int gridAreaX = SIDE_W + 20;
         int gridAreaY = 20;
-        int gridAreaW = gW - SIDE_W - 40;
-        int gridAreaH = gH - 40;
+        int gridAreaW = max(20, gW - SIDE_W - 40);
+        int gridAreaH = max(20, gH - 40);
 
         if (boardLoaded) {
-            int sz = min(gridAreaW / board.m, gridAreaH / board.n);
-            if (sz < 8) sz = 8;
+            int sz = min(gridAreaW / max(1, board.m), gridAreaH / max(1, board.n));
+            if (sz < 4) sz = 4; //tetap render kecil2 daripada crash. Tile minimum 4px.
             int totalW = sz * board.m;
             int totalH = sz * board.n;
             int gx = gridAreaX + (gridAreaW - totalW) / 2;
@@ -522,6 +669,147 @@ int RunGui() {
         DrawDropdownPopup(rFile, ddFile, files);
         DrawDropdownPopup(rAlgo, ddAlgo, algos);
         if (heurEnabled) DrawDropdownPopup(rHeur, ddHeur, heurs);
+
+        //save destination modal
+        if (saveModalOpen) {
+            //dim background
+            DrawRectangle(0, 0, gW, gH, (Color){ 0, 0, 0, 160 });
+
+            const int modalW = 520;
+            const int modalH = 180;
+            int mx = (gW - modalW) / 2;
+            int my = (gH - modalH) / 2;
+            Rectangle modal = { (float)mx, (float)my, (float)modalW, (float)modalH };
+            DrawRectangleRec(modal, PANEL);
+            DrawRectangleLinesEx(modal, 2, ACCENT);
+
+            DrawText("Save solution to .txt", mx + 20, my + 16, 18, TEXT);
+            DrawText("Destination path:", mx + 20, my + 50, 14, TEXT_DIM);
+
+            //text input
+            Rectangle rInput = { (float)(mx + 20), (float)(my + 72), (float)(modalW - 40), 32 };
+            DrawRectangleRec(rInput, BG);
+            DrawRectangleLinesEx(rInput, 1, ACCENT);
+
+            //clamp caret
+            if (saveCaret < 0) saveCaret = 0;
+            if (saveCaret > (int)savePathBuf.size()) saveCaret = (int)savePathBuf.size();
+
+            //insert karakter di posisi caret
+            int ch = GetCharPressed();
+            while (ch > 0) {
+                if (ch >= 32 && ch < 127 && (int)savePathBuf.size() < 250) {
+                    savePathBuf.insert(savePathBuf.begin() + saveCaret, (char)ch);
+                    saveCaret++;
+                }
+                ch = GetCharPressed();
+            }
+
+            //paste Cmd/Ctrl + V
+            bool modKey = IsKeyDown(KEY_LEFT_SUPER) || IsKeyDown(KEY_RIGHT_SUPER) ||
+                          IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+            if (modKey && IsKeyPressed(KEY_V)) {
+                const char* clip = GetClipboardText();
+                if (clip) {
+                    string s = clip;
+                    //filter karakter aman saja
+                    string clean;
+                    for (char c : s) if ((unsigned char)c >= 32 && (unsigned char)c < 127) clean += c;
+                    int room = 250 - (int)savePathBuf.size();
+                    if ((int)clean.size() > room) clean.resize(max(0, room));
+                    savePathBuf.insert(saveCaret, clean);
+                    saveCaret += (int)clean.size();
+                }
+            }
+
+            //caret movement & edit keys (dengan repeat saat di-hold)
+            auto isRepeating = [](int key, float& accum, float initial = 0.4f, float interval = 0.04f) {
+                if (IsKeyPressed(key)) { accum = 0; return true; }
+                if (IsKeyDown(key)) {
+                    accum += GetFrameTime();
+                    if (accum > initial) { accum = initial - interval; return true; }
+                }
+                return false;
+            };
+            static float leftAccum = 0, rightAccum = 0, bsAccum = 0, delAccum = 0;
+
+            if (isRepeating(KEY_LEFT, leftAccum)) {
+                if (modKey) {
+                    //word jump
+                    while (saveCaret > 0 && savePathBuf[saveCaret - 1] == '/') saveCaret--;
+                    while (saveCaret > 0 && savePathBuf[saveCaret - 1] != '/') saveCaret--;
+                } else if (saveCaret > 0) saveCaret--;
+            }
+            if (isRepeating(KEY_RIGHT, rightAccum)) {
+                int n = (int)savePathBuf.size();
+                if (modKey) {
+                    while (saveCaret < n && savePathBuf[saveCaret] == '/') saveCaret++;
+                    while (saveCaret < n && savePathBuf[saveCaret] != '/') saveCaret++;
+                } else if (saveCaret < n) saveCaret++;
+            }
+            if (IsKeyPressed(KEY_HOME)) saveCaret = 0;
+            if (IsKeyPressed(KEY_END))  saveCaret = (int)savePathBuf.size();
+            if (isRepeating(KEY_BACKSPACE, bsAccum) && saveCaret > 0) {
+                savePathBuf.erase(saveCaret - 1, 1);
+                saveCaret--;
+            }
+            if (isRepeating(KEY_DELETE, delAccum) && saveCaret < (int)savePathBuf.size()) {
+                savePathBuf.erase(saveCaret, 1);
+            }
+
+            //draw text dengan caret + horizontal scroll supaya caret selalu visible
+            int fs = 16;
+            int textX = (int)rInput.x + 8;
+            int textY = (int)rInput.y + 8;
+            int maxW = (int)rInput.width - 16;
+            //hitung lebar text sebelum caret
+            string before = savePathBuf.substr(0, saveCaret);
+            int caretPx = MeasureText(before.c_str(), fs);
+            //scroll offset supaya caret visible: kalau caret melebihi maxW, geser kiri
+            static int textScrollOff = 0;
+            if (caretPx - textScrollOff > maxW - 4) textScrollOff = caretPx - (maxW - 4);
+            if (caretPx - textScrollOff < 0) textScrollOff = caretPx;
+            if (textScrollOff < 0) textScrollOff = 0;
+
+            BeginScissorMode((int)rInput.x + 4, (int)rInput.y, (int)rInput.width - 8, (int)rInput.height);
+            DrawText(savePathBuf.c_str(), textX - textScrollOff, textY, fs, TEXT);
+            //caret blink (deterministik 500ms cycle, gak goyah saat resize)
+            int blinkPhase = (int)(GetTime() * 2.0) & 1;
+            if (blinkPhase == 0) {
+                int cx = textX + caretPx - textScrollOff;
+                DrawRectangle(cx, textY, 2, fs, TEXT);
+            }
+            EndScissorMode();
+
+            //inline error (gambar SEBELUM tombol supaya selalu visible saat doSave gagal)
+            if (savePathError) {
+                DrawText("[ERROR] Path is empty !", mx + 20, my + modalH - 78, 14, BAD);
+            }
+
+            //tombol Cancel & Save
+            Rectangle rCancel = { (float)(mx + modalW - 220), (float)(my + modalH - 50), 90, 34 };
+            Rectangle rOk     = { (float)(mx + modalW - 120), (float)(my + modalH - 50), 100, 34 };
+            bool doSave = false;
+            if (Button(rCancel, "Cancel")) saveModalOpen = false;
+            if (Button(rOk, "Save")) doSave = true;
+
+            //hotkey
+            if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) doSave = true;
+            if (IsKeyPressed(KEY_ESCAPE)) saveModalOpen = false;
+
+            if (doSave) {
+                if (savePathBuf.empty()) {
+                    savePathError = true;
+                } else {
+                    bool ok = SaveSolutionTxt(savePathBuf, board, sol,
+                                              algos[ddAlgo.idx],
+                                              heurEnabled ? heurs[ddHeur.idx] : string("-"));
+                    saveStatus = ok ? ("Saved to " + savePathBuf) : ("[ERROR] Failed to save !");
+                    saveModalOpen = false;
+                    savePathError = false;
+                }
+            }
+        }
 
         EndDrawing();
     }
