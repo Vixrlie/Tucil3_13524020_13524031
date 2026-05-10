@@ -40,7 +40,7 @@ static int RunCli() {
                 cout << "Solution cost: " << sol.cost << endl;
             }
             cout << "Iterations: " << sol.iterations << endl;
-            cout << "Execution time: " << sol.execMs << " ms" << endl;
+            cout << "Execution time: " << sol.execUs << " ms" << endl;
         } else if (alg == "ucs") {
             Solution sol = SolveUCS(b);
             if (!sol.found) {
@@ -50,7 +50,7 @@ static int RunCli() {
                 cout << "Solution cost: " << sol.cost << endl;
             }
             cout << "Iterations: " << sol.iterations << endl;
-            cout << "Execution time: " << sol.execMs << " ms" << endl;
+            cout << "Execution time: " << sol.execUs << " ms" << endl;
         } else {
             cout << "Algorithm not supported by this runner." << endl;
         }
