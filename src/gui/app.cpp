@@ -290,10 +290,15 @@ int RunGui() {
 
         Rectangle rHeur = { 20, (float)y, SIDE_W - 40, 32 };
         bool heurEnabled = (ddAlgo.idx != 0); //UCS ga butuh heuristik
-        DrawDropdown(rHeur, ddHeur, heurs, "Heuristic");
-        if (!heurEnabled) {
-            DrawRectangleRec(rHeur, (Color){ 28, 32, 44, 180 });
-            DrawText("(unused for UCS)", (int)rHeur.x + 10, (int)rHeur.y + 8, 14, TEXT_DIM);
+        if (heurEnabled) {
+            DrawDropdown(rHeur, ddHeur, heurs, "Heuristic");
+        } else {
+            //placeholder disabled, hanya satu label, tanpa pemanggilan DrawDropdown supaya gak dobel
+            DrawText("Heuristic", (int)rHeur.x, (int)rHeur.y - 18, 14, TEXT_DIM);
+            DrawRectangleRec(rHeur, PANEL);
+            DrawRectangleLinesEx(rHeur, 1, BORDER);
+            DrawText("(unused for UCS)", (int)rHeur.x + 10, (int)rHeur.y + 8, 16, TEXT_DIM);
+            ddHeur.open = false; //pastikan popup nutup kalau user pindah ke UCS saat dropdown terbuka
         }
         y += 60;
 
