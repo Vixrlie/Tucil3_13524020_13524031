@@ -10,3 +10,6 @@ string PadInt(int v, int width);
 
 //cari lebar maksimum representasi int dari grid 2D
 int MaxIntWidth(const vector<vector<int>>& grid);
+
+//format waktu: <2000 us tampil "<us> us", else tampil "<ms> ms"
+string FormatExecTime(long long us);

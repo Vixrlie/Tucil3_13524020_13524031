@@ -7,7 +7,7 @@ static string Trim(const string& s) {
     return s.substr(a, b - a + 1);
 }
 
-int main() {
+static int RunCli() {
     cout << ">> Input file name : " << endl;
     cout << "   ";
     string name;
@@ -40,7 +40,7 @@ int main() {
                 cout << "Solution cost: " << sol.cost << endl;
             }
             cout << "Iterations: " << sol.iterations << endl;
-            cout << "Execution time: " << sol.execMs << " ms" << endl;
+            cout << "Execution time: " << sol.execUs << " ms" << endl;
         } else if (alg == "ucs") {
             Solution sol = SolveUCS(b);
             if (!sol.found) {
@@ -77,4 +77,13 @@ int main() {
         return 1;
     }
     return 0;
+}
+
+int main(int argc, char** argv) {
+    //default: GUI. Pakai --cli untuk mode terminal.
+    for (int i = 1; i < argc; i++) {
+        string a = argv[i];
+        if (a == "--cli" || a == "-c") return RunCli();
+    }
+    return RunGui();
 }
