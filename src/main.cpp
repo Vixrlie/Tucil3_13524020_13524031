@@ -22,7 +22,7 @@ static int RunCli() {
         PrintBoard(b, cout);
 
         // ask which algorithm to run
-        cout << ">> Algorithm (gbfs/ucs): " << endl;
+        cout << ">> Algorithm (gbfs/ucs/a*/astar): " << endl;
         cout << "   ";
         string alg;
         if (!getline(cin, alg)) return 0;
@@ -50,7 +50,24 @@ static int RunCli() {
                 cout << "Solution cost: " << sol.cost << endl;
             }
             cout << "Iterations: " << sol.iterations << endl;
-            cout << "Execution time: " << sol.execUs << " ms" << endl;
+            cout << "Execution time: " << sol.execMs << " ms" << endl;
+        } else if (alg == "a*" || alg == "astar") {
+            cout << ">> Heuristic (h1/h2/h3): " << endl;
+            cout << "   ";
+            string heur;
+            if (!getline(cin, heur)) return 0;
+            size_t sh = heur.find_first_not_of(" \t");
+            size_t eh = heur.find_last_not_of(" \t\r\n");
+            if (sh != string::npos) heur = heur.substr(sh, eh - sh + 1);
+            Solution sol = SolveAStar(b);
+            if (!sol.found) {
+                cout << "Solution not found" << endl;
+            } else {
+                cout << "Solution moves: " << sol.moves << endl;
+                cout << "Solution cost: " << sol.cost << endl;
+            }
+            cout << "Iterations: " << sol.iterations << endl;
+            cout << "Execution time: " << sol.execMs << " ms" << endl;
         } else {
             cout << "Algorithm not supported by this runner." << endl;
         }
