@@ -77,7 +77,7 @@ Solution SolveAStar(const Board& b) {
     }
 
     auto t1 = chrono::steady_clock::now();
-    sol.execMs = chrono::duration_cast<chrono::milliseconds>(t1 - t0).count();
+    sol.execUs = chrono::duration_cast<chrono::milliseconds>(t1 - t0).count();
 
     if (goalIdx < 0) return sol;
 

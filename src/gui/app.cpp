@@ -318,14 +318,11 @@ int RunGui() {
                 //semua algo sementara fallback ke UCS (stub)
                 if (ddAlgo.idx == 0) sol = SolveUCS(board);
                 else if (ddAlgo.idx == 1) sol = SolveGBFS(board);
-                // else if (ddAlgo.idx == 2) sol = SolveAStar(board);
+                else if (ddAlgo.idx == 2) sol = SolveAStar(board);
                 solved = true;
                 curStep = 0;
                 playing = false;
                 saveStatus.clear();
-                if (ddAlgo.idx == 0) solveNotice.clear();
-                else if (ddAlgo.idx == 1) solveNotice.clear();
-                else solveNotice = string(algos[ddAlgo.idx]) + " not implemented yet — used UCS as fallback.";
             }
         }
         y += 60;

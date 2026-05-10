@@ -50,7 +50,7 @@ static int RunCli() {
                 cout << "Solution cost: " << sol.cost << endl;
             }
             cout << "Iterations: " << sol.iterations << endl;
-            cout << "Execution time: " << sol.execMs << " ms" << endl;
+            cout << "Execution time: " << sol.execUs << " ms" << endl;
         } else if (alg == "a*" || alg == "astar") {
             cout << ">> Heuristic (h1/h2/h3): " << endl;
             cout << "   ";
@@ -67,7 +67,7 @@ static int RunCli() {
                 cout << "Solution cost: " << sol.cost << endl;
             }
             cout << "Iterations: " << sol.iterations << endl;
-            cout << "Execution time: " << sol.execMs << " ms" << endl;
+            cout << "Execution time: " << sol.execUs << " ms" << endl;
         } else {
             cout << "Algorithm not supported by this runner." << endl;
         }
